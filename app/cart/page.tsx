@@ -10,9 +10,20 @@ interface CartItem {
   product_id: number
   product_name: string
   price: number
+  original_price: number
+  final_price: number
+  campaign_discount: number
+  campaign?: {
+    campaign_id: number
+    campaign_name: string
+    discount_type: string
+    discount_value: number
+  }
   quantity: number
   image_url?: string
   stock_quantity: number
+  size_stocks?: { [key: string]: number }
+  selected_size?: string
 }
 
 interface RecommendedProduct {
@@ -25,9 +36,14 @@ interface RecommendedProduct {
 export default function CartPage() {
   const router = useRouter()
   const [items, setItems] = useState<CartItem[]>([])
+  const [isPremium, setIsPremium] = useState(false)
   const [recommendedProducts, setRecommendedProducts] = useState<RecommendedProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [addingMembership, setAddingMembership] = useState(false)
+  const [couponCode, setCouponCode] = useState('')
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null)
+  const [discountAmount, setDiscountAmount] = useState(0)
+  const [couponLoading, setCouponLoading] = useState(false)
   const productsScrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -41,6 +57,7 @@ export default function CartPage() {
       if (response.ok) {
         const data = await response.json()
         setItems(data.items || [])
+        setIsPremium(data.isPremium || false)
       }
     } catch (error) {
       console.error('Sepet yüklenemedi:', error)
@@ -81,8 +98,14 @@ export default function CartPage() {
     const item = items.find((i) => i.cart_id === cartId)
     if (!item) return
 
-    if (newQuantity > item.stock_quantity) {
-      alert(`Maksimum ${item.stock_quantity} adet ekleyebilirsiniz`)
+    // Stok kontrolü (Beden bazlı veya genel)
+    let maxStock = item.stock_quantity
+    if (item.selected_size && item.size_stocks) {
+      maxStock = item.size_stocks[item.selected_size] || 0
+    }
+
+    if (newQuantity > maxStock) {
+      alert(`Üzgünüz, bu ürünün ${item.selected_size ? `${item.selected_size} bedeni` : ''} için stokta sadece ${maxStock} adet kaldı.`)
       return
     }
 
@@ -121,7 +144,7 @@ export default function CartPage() {
 
   const handleAddMembershipToCart = async () => {
     setAddingMembership(true)
-    
+
     try {
       const response = await fetch('/api/cart', {
         method: 'POST',
@@ -150,7 +173,7 @@ export default function CartPage() {
 
   const handleChangeMembershipPlan = async (cartId: number, currentProductId: number, newPlan: 'monthly' | 'yearly') => {
     const newProductId = newPlan === 'monthly' ? 999 : 1000
-    
+
     if (currentProductId === newProductId) return
 
     try {
@@ -208,12 +231,52 @@ export default function CartPage() {
     }
   }
 
-  const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const handleApplyCoupon = async () => {
+    if (!couponCode) return
+    setCouponLoading(true)
+    try {
+      // Sepetteki ürün id'lerini al
+      const productIds = items.map(item => item.product_id)
+
+      const response = await fetch('/api/coupons/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coupon_code: couponCode,
+          cart_total: total,
+          product_ids: productIds
+        }),
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setAppliedCoupon(data.coupon)
+        setDiscountAmount(data.discount_amount)
+        alert(data.message)
+      } else {
+        alert(data.error || 'Kupon uygulanamadı')
+      }
+    } catch (error) {
+      alert('Kupon uygulanırken hata oluştu')
+    } finally {
+      setCouponLoading(false)
+    }
+  }
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null)
+    setDiscountAmount(0)
+    setCouponCode('')
+  }
+
+  // Kampanya indirimleri dahil toplam
+  const total = items.reduce((sum, item) => sum + (item.final_price || item.price) * item.quantity, 0)
+  const originalTotal = items.reduce((sum, item) => sum + (item.original_price || item.price) * item.quantity, 0)
+  const campaignSavings = originalTotal - total
   const shippingThreshold = 399.99
   const shippingCost = 49.90
-  const hasMembership = items.some(item => item.product_id === 999 || item.product_id === 1000)
-  const needsShipping = !hasMembership && total < shippingThreshold
-  const shippingTotal = needsShipping ? total + shippingCost : total
+  const hasMembership = isPremium || items.some(item => item.product_id === 999 || item.product_id === 1000)
+  const needsShipping = !hasMembership && (total - discountAmount) < shippingThreshold
+  const shippingTotal = needsShipping ? (total - discountAmount) + shippingCost : (total - discountAmount)
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
 
   if (loading) {
@@ -284,7 +347,15 @@ export default function CartPage() {
                             {item.product_name}
                           </h3>
                         </Link>
-                        
+
+                        {item.selected_size && (
+                          <div className="mb-2">
+                            <span className="inline-block bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-white border-2 border-gray-100 text-gray-500 shadow-sm">
+                              Beden: {item.selected_size}
+                            </span>
+                          </div>
+                        )}
+
                         {/* Üyelik Plan Seçimi */}
                         {isMembership && (
                           <div className="mb-3">
@@ -292,21 +363,19 @@ export default function CartPage() {
                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleChangeMembershipPlan(item.cart_id, item.product_id, 'monthly')}
-                                className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
-                                  currentPlan === 'monthly'
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
+                                className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${currentPlan === 'monthly'
+                                  ? 'bg-primary-600 text-white'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                  }`}
                               >
                                 Aylık (49 ₺)
                               </button>
                               <button
                                 onClick={() => handleChangeMembershipPlan(item.cart_id, item.product_id, 'yearly')}
-                                className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
-                                  currentPlan === 'yearly'
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
+                                className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${currentPlan === 'yearly'
+                                  ? 'bg-primary-600 text-white'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                  }`}
                               >
                                 Yıllık (399 ₺)
                               </button>
@@ -342,9 +411,26 @@ export default function CartPage() {
 
                           <div>
                             <p className="text-sm text-gray-600 mb-1">Fiyat</p>
-                            <p className="text-lg font-semibold text-gray-800">
-                              {(item.price * item.quantity).toLocaleString('tr-TR')} ₺
-                            </p>
+                            {item.campaign && item.campaign_discount > 0 ? (
+                              <div>
+                                <p className="text-lg font-semibold text-green-600">
+                                  {((item.final_price || item.price) * item.quantity).toLocaleString('tr-TR')} ₺
+                                </p>
+                                <p className="text-sm text-gray-400 line-through">
+                                  {((item.original_price || item.price) * item.quantity).toLocaleString('tr-TR')} ₺
+                                </p>
+                                <span className="inline-flex items-center gap-1 text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold mt-1">
+                                  <FiGift className="w-3 h-3" />
+                                  {item.campaign.discount_type === 'percentage'
+                                    ? `%${item.campaign.discount_value} İndirim`
+                                    : `${item.campaign.discount_value}₺ İndirim`}
+                                </span>
+                              </div>
+                            ) : (
+                              <p className="text-lg font-semibold text-gray-800">
+                                {(item.price * item.quantity).toLocaleString('tr-TR')} ₺
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -428,13 +514,52 @@ export default function CartPage() {
           <div className="bg-white rounded-lg shadow-md p-6 sticky top-24">
             <h2 className="text-xl font-bold text-gray-800 mb-6">Sepet Özeti</h2>
 
-            <div className="space-y-4 mb-6">
+            <div className="mb-6">
+              <label className="block text-sm font-bold text-gray-700 mb-2">İndirim Kuponu</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  placeholder="Kupon Kodu"
+                  className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                  disabled={!!appliedCoupon}
+                />
+                {!appliedCoupon ? (
+                  <button
+                    onClick={handleApplyCoupon}
+                    disabled={couponLoading || !couponCode}
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg text-sm font-bold transition disabled:opacity-50"
+                  >
+                    Uygula
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleRemoveCoupon}
+                    className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-100 transition"
+                  >
+                    Kaldır
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4 mb-6 pt-4 border-t border-gray-100">
               <div className="flex justify-between text-gray-700">
                 <span>Toplam Ürün</span>
                 <span className="font-semibold">{totalItems}</span>
               </div>
+              {campaignSavings > 0 && (
+                <div className="flex justify-between text-orange-600 bg-orange-50 p-2 rounded-lg">
+                  <span className="flex items-center gap-1">
+                    <FiGift className="w-4 h-4" />
+                    Kampanya İndirimi
+                  </span>
+                  <span className="font-bold">-{campaignSavings.toLocaleString('tr-TR')} ₺</span>
+                </div>
+              )}
               <div className="flex justify-between text-gray-700">
-                <span>Toplam Tutar</span>
+                <span>{campaignSavings > 0 ? 'İndirimli Toplam' : 'Toplam Tutar'}</span>
                 <span className="font-semibold">{total.toLocaleString('tr-TR')} ₺</span>
               </div>
               <div className="flex justify-between text-gray-700">
@@ -453,30 +578,65 @@ export default function CartPage() {
                   </div>
                 )}
               </div>
+
+              {appliedCoupon && (
+                <div className="flex justify-between text-green-600 font-bold bg-green-50 p-2 rounded border border-green-100">
+                  <div>
+                    <span>İndirim ({appliedCoupon.coupon_code})</span>
+                    {appliedCoupon.is_followers_only && (
+                      <span className="text-xs text-pink-600 ml-1">💕 Takipçi</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>-{discountAmount.toLocaleString('tr-TR')} ₺</span>
+                    <button onClick={handleRemoveCoupon} className="text-red-500 hover:text-red-700">
+                      <FiTrash2 className="text-sm" />
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="border-t pt-4 flex justify-between text-xl font-bold text-gray-800">
                 <span>Toplam</span>
                 <span className="text-primary-600">{shippingTotal.toLocaleString('tr-TR')} ₺</span>
               </div>
             </div>
 
-            {/* Avantajlı Üyelik Önerisi */}
-            {needsShipping && !hasMembership && (
-              <div className="mb-6 bg-primary-50 border border-primary-200 rounded-lg p-4">
+            {/* Avantajlı Üyelik Durumu / Önerisi */}
+            {isPremium ? (
+              <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 shadow-sm">
                 <div className="flex items-start gap-3">
-                  <FiStar className="text-primary-600 text-xl flex-shrink-0 mt-0.5" />
+                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <FiStar className="text-green-600 text-xl" />
+                  </div>
                   <div className="flex-1">
-                    <p className="text-sm font-semibold text-primary-800 mb-1">
+                    <p className="text-sm font-bold text-green-800 mb-0.5">
+                      Premium Üyeliğiniz Aktif!
+                    </p>
+                    <p className="text-[11px] text-green-700 leading-relaxed">
+                      Ayrıcalıklı dünyadasınız. Tüm siparişlerinizde <strong>kargo bedava</strong> avantajının keyfini çıkarın.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (needsShipping && !hasMembership) && (
+              <div className="mb-6 bg-primary-50 border border-primary-200 rounded-lg p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <FiStar className="text-primary-600 text-xl" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-primary-800 mb-0.5">
                       Avantajlı Üyelik ile Ücretsiz Kargo!
                     </p>
-                    <p className="text-xs text-primary-700 mb-3">
-                      Tüm siparişlerde ücretsiz kargo ve özel indirimlerden yararlanın.
+                    <p className="text-[11px] text-primary-700 leading-relaxed mb-3">
+                      Tüm siparişlerde <strong>ücretsiz kargo</strong> ve özel indirimlerden yararlanmak için hemen katılın.
                     </p>
                     <button
                       onClick={handleAddMembershipToCart}
                       disabled={addingMembership}
-                      className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full bg-primary-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary-700 transition shadow-sm active:scale-95 disabled:opacity-50"
                     >
-                      {addingMembership ? 'Ekleniyor...' : 'Avantajlı Üyelik Al'}
+                      {addingMembership ? 'Ekleniyor...' : 'Hemen Premium Ol'}
                     </button>
                   </div>
                 </div>

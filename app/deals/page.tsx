@@ -1,55 +1,46 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { FiClock, FiPercent, FiShoppingCart } from 'react-icons/fi'
+import { useEffect, useState } from 'react'
 import ProductCard from '@/components/ProductCard'
+import { FiClock, FiTag, FiShoppingBag } from 'react-icons/fi'
 
 interface Product {
   product_id: number
   product_name: string
   description: string
   price: number
-  discount_percentage?: number
-  image_url?: string
+  original_price: number
+  final_price: number
+  campaign_discount: number
+  campaign?: {
+    campaign_id: number
+    campaign_name: string
+    discount_type: string
+    discount_value: number
+    is_deal?: boolean
+    end_date?: string
+  }
   stock_quantity: number
   sku: string
+  image_url?: string
+  deal_end_date?: string
   category_name: string
 }
 
 export default function DealsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [timeLeft, setTimeLeft] = useState({ hours: 23, minutes: 59, seconds: 59 })
 
   useEffect(() => {
     fetchDeals()
-    
-    // Geri sayım
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev.seconds > 0) {
-          return { ...prev, seconds: prev.seconds - 1 }
-        } else if (prev.minutes > 0) {
-          return { ...prev, minutes: prev.minutes - 1, seconds: 59 }
-        } else if (prev.hours > 0) {
-          return { hours: prev.hours - 1, minutes: 59, seconds: 59 }
-        } else {
-          return { hours: 23, minutes: 59, seconds: 59 }
-        }
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
   }, [])
 
   const fetchDeals = async () => {
     try {
-      const response = await fetch('/api/products?deals=true')
-      if (response.ok) {
-        const data = await response.json()
-        setProducts(data.products || [])
-      }
+      // Sadece fırsat ürünlerini getiren API çağrısı
+      const response = await fetch('/api/products?showDeals=true')
+      const data = await response.json()
+      setProducts(data.products || [])
     } catch (error) {
       console.error('Fırsatlar yüklenemedi:', error)
     } finally {
@@ -57,56 +48,69 @@ export default function DealsPage() {
     }
   }
 
+  // Geri sayım hesaplama fonksiyonu
+  const calculateTimeLeft = (endDate: string) => {
+    const difference = +new Date(endDate) - +new Date()
+    if (difference > 0) {
+      return {
+        hours: Math.floor((difference / (1000 * 60 * 60))),
+        minutes: Math.floor((difference / 1000 / 60) % 60),
+        seconds: Math.floor((difference / 1000) % 60)
+      }
+    }
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
-        {/* Başlık ve Geri Sayım */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-lg p-6 mb-8 text-white">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h1 className="text-3xl font-bold mb-2">Günün Fırsatı</h1>
-              <p className="text-primary-100">Özel indirimli ürünleri kaçırma!</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <FiClock className="text-2xl" />
-              <div className="text-center">
-                <p className="text-sm text-primary-100 mb-1">Kalan Süre</p>
-                <div className="flex gap-2 text-2xl font-bold">
-                  <span>{String(timeLeft.hours).padStart(2, '0')}</span>
-                  <span>:</span>
-                  <span>{String(timeLeft.minutes).padStart(2, '0')}</span>
-                  <span>:</span>
-                  <span>{String(timeLeft.seconds).padStart(2, '0')}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Hero Header */}
+      <div className="bg-gradient-to-r from-orange-500 to-red-600 text-white py-12 relative overflow-hidden">
+        <div className="absolute inset-0 bg-black/10"></div>
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-white/20 rounded-full blur-3xl animate-pulse"></div>
 
-        {/* Ürünler */}
+        <div className="container mx-auto px-4 relative z-10 text-center">
+          <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-1 rounded-full mb-4 animate-bounce">
+            <FiClock />
+            <span className="font-bold">Sınırlı Süre</span>
+          </div>
+          <h1 className="text-4xl md:text-6xl font-black mb-4 drop-shadow-lg">Günün Fırsatları</h1>
+          <p className="text-xl md:text-2xl opacity-90 max-w-2xl mx-auto font-light">
+            Sadece bugüne özel, seçili ürünlerde kaçırılmayacak indirimleri keşfedin.
+          </p>
+        </div>
+      </div>
+
+      <div className="container mx-auto px-4 py-12">
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-gray-500">Yükleniyor...</p>
+            <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Fırsatlar yükleniyor...</p>
           </div>
         ) : products.length === 0 ? (
-          <div className="text-center py-12">
-            <FiPercent className="text-6xl text-gray-300 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-700 mb-2">Şu an fırsat ürünü yok</h2>
-            <p className="text-gray-500 mb-6">Yakında harika fırsatlar gelecek!</p>
-            <Link
-              href="/"
-              className="inline-block bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition"
-            >
-              Ana Sayfaya Dön
-            </Link>
+          <div className="bg-white rounded-2xl shadow-sm p-12 text-center max-w-md mx-auto">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <FiShoppingBag className="text-4xl text-gray-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Şu an aktif fırsat yok</h2>
+            <p className="text-gray-600 mb-6">
+              Yeni fırsatlar için lütfen daha sonra tekrar kontrol edin veya bildirimleri açın.
+            </p>
           </div>
         ) : (
-          <div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {products.map((product) => (
-                <ProductCard key={product.product_id} product={product} />
-              ))}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {products.map((product) => (
+              <div key={product.product_id} className="relative group">
+                {/* Süre Sayacı Badge */}
+                {product.campaign?.end_date && (
+                  <div className="absolute top-2 left-2 right-2 z-10 bg-orange-600 text-white text-xs font-bold py-1 px-2 rounded flex items-center justify-center gap-1 shadow-lg transform -translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition duration-300">
+                    <FiClock />
+                    <span>Bitmesine az kaldı!</span>
+                  </div>
+                )}
+
+                <ProductCard product={product} />
+              </div>
+            ))}
           </div>
         )}
       </div>

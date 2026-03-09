@@ -39,9 +39,13 @@ export async function GET() {
       const membership = result.rows[0]
       const expiryDate = new Date(membership.expiry_date)
       const now = new Date()
-
-      // Üyelik süresi dolmuş mu kontrol et
       const isActive = expiryDate > now
+
+      // Sync user table for consistency (Cart API uses this)
+      await pool.query(
+        'UPDATE users SET is_premium = $1, premium_expires_at = $2 WHERE user_id = $3',
+        [isActive, expiryDate, user.userId]
+      )
 
       return NextResponse.json({
         membership: {
@@ -53,7 +57,12 @@ export async function GET() {
       })
     }
 
-    // Üyelik yok
+    // No membership found, ensure user table is consistent
+    await pool.query(
+      'UPDATE users SET is_premium = FALSE WHERE user_id = $1',
+      [user.userId]
+    )
+
     return NextResponse.json({
       membership: {
         isActive: false,
@@ -71,5 +80,45 @@ export async function GET() {
       { error: 'Üyelik bilgisi yüklenemedi' },
       { status: 500 }
     )
+  }
+}
+
+export async function DELETE() {
+  try {
+    const user = await requireAuth()
+
+    // Find active membership order to cancel
+    const findOrderQuery = `
+      SELECT o.order_id
+      FROM orders o
+      INNER JOIN order_items oi ON o.order_id = oi.order_id
+      WHERE o.user_id = $1
+        AND oi.product_id IN (999, 1000)
+        AND o.status_id != 5
+      ORDER BY o.order_date DESC
+      LIMIT 1
+    `
+    const orderRes = await pool.query(findOrderQuery, [user.userId])
+
+    if (orderRes.rows.length > 0) {
+      const orderId = orderRes.rows[0].order_id
+
+      // Cancel order
+      await pool.query('UPDATE orders SET status_id = 5, cancellation_reason = $1 WHERE order_id = $2', ['Kullanıcı isteğiyle premium iptali', orderId])
+
+      // Update user record
+      await pool.query('UPDATE users SET is_premium = FALSE, premium_expires_at = NULL WHERE user_id = $1', [user.userId])
+
+      return NextResponse.json({ success: true, message: 'Üyelik iptal edildi' })
+    }
+
+    return NextResponse.json({ error: 'Aktif üyelik bulunamadı' }, { status: 404 })
+
+  } catch (error: any) {
+    if (error.message === 'Unauthorized') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    console.error('Üyelik iptal hatası:', error)
+    return NextResponse.json({ error: 'İşlem başarısız' }, { status: 500 })
   }
 }

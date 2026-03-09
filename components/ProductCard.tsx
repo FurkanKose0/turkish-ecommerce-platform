@@ -3,17 +3,28 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FiShoppingCart, FiPackage, FiHeart } from 'react-icons/fi'
+import { FiShoppingCart, FiPackage, FiHeart, FiTag } from 'react-icons/fi'
 
 interface Product {
   product_id: number
   product_name: string
   description: string
   price: number
+  original_price?: number
+  final_price?: number
+  campaign_discount?: number
+  campaign?: {
+    campaign_id: number
+    campaign_name: string
+    discount_type: string
+    discount_value: number
+  }
   stock_quantity: number
   sku: string
   image_url?: string
   category_name: string
+  sizes?: string
+  size_stocks?: { [key: string]: number }
 }
 
 interface ProductCardProps {
@@ -26,6 +37,8 @@ export default function ProductCard({ product }: ProductCardProps) {
   const [message, setMessage] = useState('')
   const [isFavorite, setIsFavorite] = useState(false)
   const [favoriting, setFavoriting] = useState(false)
+  const [selectedSize, setSelectedSize] = useState<string | null>(null)
+  const [showSizeModal, setShowSizeModal] = useState(false)
 
   useEffect(() => {
     checkFavorite()
@@ -47,6 +60,11 @@ export default function ProductCard({ product }: ProductCardProps) {
   }
 
   const handleAddToCart = async () => {
+    if (product.sizes && !selectedSize) {
+      setShowSizeModal(true)
+      return
+    }
+
     setAdding(true)
     setMessage('')
 
@@ -61,7 +79,11 @@ export default function ProductCard({ product }: ProductCardProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include', // Cookie'lerin gönderilmesi için
-        body: JSON.stringify({ productId: product.product_id, quantity: 1 }),
+        body: JSON.stringify({
+          productId: product.product_id,
+          quantity: 1,
+          selectedSize: selectedSize
+        }),
       })
 
       const data = await response.json()
@@ -72,6 +94,10 @@ export default function ProductCard({ product }: ProductCardProps) {
       }
 
       setMessage('Sepete eklendi!')
+      setShowSizeModal(false)
+      setSelectedSize(null)
+      // Trigger cart update event for Header
+      window.dispatchEvent(new CustomEvent('cartUpdated'))
       setTimeout(() => setMessage(''), 2000)
     } catch (error) {
       setMessage('Bir hata oluştu')
@@ -83,7 +109,7 @@ export default function ProductCard({ product }: ProductCardProps) {
   const handleToggleFavorite = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     // Login kontrolü
     try {
       const authResponse = await fetch('/api/auth/me')
@@ -97,7 +123,7 @@ export default function ProductCard({ product }: ProductCardProps) {
       router.push('/login?redirect=favorites')
       return
     }
-    
+
     setFavoriting(true)
 
     try {
@@ -123,12 +149,12 @@ export default function ProductCard({ product }: ProductCardProps) {
           body: JSON.stringify({ productId: product.product_id }),
         })
 
-      if (response.ok) {
-        setIsFavorite(true)
-      } else {
-        const error = await response.json()
-        alert(error.error || 'Favoriye eklenemedi')
-      }
+        if (response.ok) {
+          setIsFavorite(true)
+        } else {
+          const error = await response.json()
+          alert(error.error || 'Favoriye eklenemedi')
+        }
       }
     } catch (error) {
       console.error('Favori işlemi hatası:', error)
@@ -173,21 +199,100 @@ export default function ProductCard({ product }: ProductCardProps) {
           </h3>
         </Link>
         <div className="mt-auto">
-          <p className="text-base font-semibold text-gray-800 mb-2">
-            {product.price.toLocaleString('tr-TR')} ₺
-          </p>
-          <button
-            onClick={handleAddToCart}
-            disabled={adding || product.stock_quantity === 0}
-            className="w-full bg-primary-600 text-white py-2 rounded text-sm hover:bg-primary-700 transition flex items-center justify-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <FiShoppingCart className="text-sm" />
-            <span className="text-xs">Sepete Ekle</span>
-          </button>
+          {product.campaign && product.campaign_discount && product.campaign_discount > 0 ? (
+            <div className="mb-2">
+              <div className="flex items-center gap-2">
+                <p className="text-base font-bold text-green-600">
+                  {(product.final_price || product.price).toLocaleString('tr-TR')} ₺
+                </p>
+                <p className="text-sm text-gray-400 line-through">
+                  {(product.original_price || product.price).toLocaleString('tr-TR')} ₺
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1 text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
+                <FiTag className="w-3 h-3" />
+                {product.campaign.discount_type === 'percentage'
+                  ? `%${product.campaign.discount_value}`
+                  : `${product.campaign.discount_value}₺`}
+              </span>
+            </div>
+          ) : (
+            <p className="text-base font-semibold text-gray-800 mb-2">
+              {product.price.toLocaleString('tr-TR')} ₺
+            </p>
+          )}
+
+          <div className="relative">
+            {showSizeModal && product.sizes && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border-2 border-primary-600 rounded-lg shadow-xl p-3 z-50 animate-in slide-in-from-bottom-2 fade-in">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-black text-gray-800 uppercase">Beden Seç</h4>
+                  <button
+                    onClick={() => setShowSizeModal(false)}
+                    className="text-gray-400 hover:text-gray-600 text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(() => {
+                    const sStr = product.sizes ? product.sizes.split(',').map(s => s.trim()) : [];
+                    const sStock = product.size_stocks ? Object.keys(product.size_stocks) : [];
+                    return Array.from(new Set([...sStr, ...sStock]))
+                      .sort((a, b) => {
+                        const sizeOrder = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL', '5XL'];
+                        const indexA = sizeOrder.indexOf(a.toUpperCase());
+                        const indexB = sizeOrder.indexOf(b.toUpperCase());
+
+                        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                        if (indexA !== -1) return -1;
+                        if (indexB !== -1) return 1;
+                        return a.localeCompare(b);
+                      })
+                      .map((size) => {
+                        const stock = product.size_stocks ? (product.size_stocks as any)[size] : 1;
+                        const isOutOfStock = stock <= 0;
+
+                        return (
+                          <button
+                            key={size}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!isOutOfStock) {
+                                setSelectedSize(size);
+                                handleAddToCart();
+                              }
+                            }}
+                            disabled={isOutOfStock}
+                            className={`min-w-[32px] h-8 px-2 rounded-lg text-[11px] font-black transition-all border flex items-center justify-center ${isOutOfStock
+                              ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed opacity-60'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-primary-600 hover:bg-primary-50 hover:text-primary-600'
+                              }`}
+                          >
+                            <span className={isOutOfStock ? 'line-through decoration-red-400' : ''}>
+                              {size}
+                            </span>
+                          </button>
+                        );
+                      });
+                  })()}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={handleAddToCart}
+              disabled={adding || product.stock_quantity === 0}
+              className="w-full bg-primary-600 text-white py-2 rounded text-sm hover:bg-primary-700 transition flex items-center justify-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FiShoppingCart className="text-sm" />
+              <span className="text-xs">Sepete Ekle</span>
+            </button>
+          </div>
           {message && (
-            <p className={`text-xs mt-1 text-center ${
-              message.includes('eklendi') ? 'text-green-600' : 'text-red-600'
-            }`}>
+            <p className={`text-xs mt-1 text-center ${message.includes('eklendi') ? 'text-green-600' : 'text-red-600'
+              }`}>
               {message}
             </p>
           )}

@@ -41,6 +41,9 @@ export default function Footer() {
                 <Link href="/orders" className="hover:text-white transition">Siparişlerim</Link>
               </li>
               <li>
+                <Link href="/support" className="hover:text-white transition">Müşteri Temsilcisi</Link>
+              </li>
+              <li>
                 <Link href="/faq" className="hover:text-white transition">Sık Sorulan Sorular</Link>
               </li>
               <li>

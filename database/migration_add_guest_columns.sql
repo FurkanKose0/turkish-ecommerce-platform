@@ -1,0 +1,11 @@
+
+-- Misafir kullanıcı kolonlarını ekle
+ALTER TABLE orders 
+ADD COLUMN IF NOT EXISTS guest_first_name VARCHAR(100),
+ADD COLUMN IF NOT EXISTS guest_last_name VARCHAR(100),
+ADD COLUMN IF NOT EXISTS guest_email VARCHAR(255),
+ADD COLUMN IF NOT EXISTS guest_phone VARCHAR(20),
+ADD COLUMN IF NOT EXISTS guest_address_line1 VARCHAR(255),
+ADD COLUMN IF NOT EXISTS guest_address_line2 VARCHAR(255),
+ADD COLUMN IF NOT EXISTS guest_city VARCHAR(100),
+ADD COLUMN IF NOT EXISTS guest_postal_code VARCHAR(20);

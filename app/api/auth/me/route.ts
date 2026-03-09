@@ -6,7 +6,7 @@ import { getCurrentUser } from '@/lib/auth-helpers'
 export async function GET() {
   try {
     const user = await getCurrentUser()
-    
+
     if (!user) {
       return NextResponse.json(
         { error: 'Giriş yapılmamış' },
@@ -15,7 +15,7 @@ export async function GET() {
     }
 
     const result = await pool.query(
-      `SELECT user_id, email, first_name, last_name, role_id
+      `SELECT user_id, email, first_name, last_name, role_id, is_premium
        FROM users
        WHERE user_id = $1`,
       [user.userId]
@@ -35,6 +35,7 @@ export async function GET() {
         firstName: result.rows[0].first_name,
         lastName: result.rows[0].last_name,
         roleId: result.rows[0].role_id,
+        isPremium: result.rows[0].is_premium,
       },
     })
   } catch (error: any) {

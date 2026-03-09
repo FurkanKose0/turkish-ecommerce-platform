@@ -26,12 +26,22 @@ export async function GET(
         p.stock_quantity,
         p.sku,
         p.image_url,
+        p.sizes,
+        p.size_stocks,
+        p.is_deal_of_day,
+        p.deal_discount_percent,
+        p.deal_start_date,
+        p.deal_end_date,
         p.is_active,
+        p.seller_id,
+        u.first_name as seller_first_name,
+        u.last_name as seller_last_name,
         c.category_id,
         c.category_name,
         c.parent_category_id
       FROM products p
       INNER JOIN categories c ON p.category_id = c.category_id
+      LEFT JOIN users u ON p.seller_id = u.user_id
       WHERE p.product_id = $1 AND p.is_active = TRUE
     `
 

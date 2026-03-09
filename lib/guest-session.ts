@@ -1,4 +1,4 @@
-// Guest session yardımcı fonksiyonları
+  // Guest session yardımcı fonksiyonları
 import { cookies } from 'next/headers'
 import { randomBytes } from 'crypto'
 import pool from './db'

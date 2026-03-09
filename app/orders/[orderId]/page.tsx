@@ -6,7 +6,6 @@ import Link from 'next/link'
 import {
   FiPackage,
   FiCalendar,
-  FiDollarSign,
   FiMapPin,
   FiArrowLeft,
   FiShoppingBag,
@@ -27,6 +26,7 @@ interface OrderItem {
   seller_first_name?: string
   seller_last_name?: string
   seller_email?: string
+  selected_size?: string
 }
 
 interface Order {
@@ -36,6 +36,9 @@ interface Order {
   status_name: string
   status_id: number
   tracking_code?: string
+  tracking_number?: string
+  cancellation_reason?: string
+  cargo_company?: string
   shipped_date?: string
   delivered_date?: string
   address_line1?: string
@@ -90,6 +93,34 @@ export default function OrderDetailPage() {
       setError('Bir hata oluştu')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleCancelOrder = async () => {
+    if (!order) return
+
+    if (!confirm('Siparişi iptal etmek istediğinize emin misiniz?')) return
+
+    const reason = prompt('İptal nedeni (isteğe bağlı):')
+
+    try {
+      const response = await fetch(`/api/orders/${order.order_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel', reason }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert('Siparişiniz iptal edildi.')
+        window.location.reload()
+      } else {
+        alert(data.error || 'İptal işlemi başarısız oldu.')
+      }
+    } catch (error) {
+      console.error('İptal hatası:', error)
+      alert('Bir hata oluştu.')
     }
   }
 
@@ -181,6 +212,53 @@ export default function OrderDetailPage() {
                 {order.status_name}
               </span>
             </div>
+
+            {/* Cancelled Warning */}
+            {order.status_name === 'İptal' && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <h3 className="text-red-800 font-bold flex items-center gap-2 mb-1">
+                  <FiCheckCircle className="text-red-600" />
+                  Sipariş İptal Edildi
+                </h3>
+                {order.cancellation_reason && (
+                  <p className="text-red-700 text-sm mb-2">
+                    <span className="font-semibold">İptal Nedeni:</span> {order.cancellation_reason}
+                  </p>
+                )}
+                <p className="text-red-600 text-sm">
+                  İade işlemi başlatılmıştır. Ücret iadesi bankanıza bağlı olarak 3-7 iş günü içerisinde kartınıza yansıyacaktır.
+                </p>
+              </div>
+            )}
+
+            {/* Cancel Button - Only for Pending/Confirmed */}
+            {order.status_id <= 2 && (
+              <div className="mb-4">
+                <button
+                  onClick={handleCancelOrder}
+                  className="w-full border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 hover:border-red-300 font-medium py-2 rounded-lg transition flex items-center justify-center gap-2"
+                >
+                  <FiCheckCircle className="rotate-45" /> {/* Use X icon effectively? rotate check circle looks odd. I'll stick to a proper icon or just text if icon not imported. FiXCircle is imported? Wait, no. I'll use FiX if available or similar. Imported: FiCheckCircle is there. FiXCircle IS NOT imported in line 6-14 but I saw it in prior view file output... checking... Line 13: FiCheckCircle. Line 14: } (End of imports).
+                   Wait, lines 6-14 do NOT have FiXCircle.
+                   BUT I saw `import { ..., FiXCircle, ... } from 'react-icons/fi'` in `app/profile/page.tsx` earlier.
+                   In THIS file `app/orders/[orderId]/page.tsx`, let me check imports.
+                   Lines 6-14: FiPackage, FiCalendar, FiMapPin, FiArrowLeft, FiShoppingBag, FiTruck, FiCheckCircle.
+                   NO FiXCircle.
+                   I will use `FiTrash2` or just `FiArrowLeft` rotated? No.
+                   I will add `FiXCircle` to imports first?
+                   Ah, I cannot edit imports AND body in one non-contiguous `replace_file_content`.
+                   I will use `FiCheckCircle` for now and just rely on red color, OR just text.
+                   Acually, I will update imports in a separate step or use `multi_replace`.
+                   Let's use `multi_replace` to add import AND add button.
+                   */}
+                  Siparişi İptal Et
+                </button>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  Siparişiniz kargoya verilmeden önce iptal edebilirsiniz.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2 text-sm text-gray-600">
               <div className="flex items-center gap-2">
                 <FiCalendar />
@@ -208,13 +286,33 @@ export default function OrderDetailPage() {
                   </span>
                 </div>
               )}
-              {order.tracking_code && (
-                <div className="flex items-center gap-2 mt-3 p-3 bg-blue-50 rounded-lg">
-                  <FiTruck className="text-blue-600" />
-                  <div>
-                    <span className="text-sm font-medium text-blue-800">Kargo Takip Kodu:</span>
-                    <p className="text-lg font-bold text-blue-900">{order.tracking_code}</p>
+              {(order.tracking_number || order.tracking_code) && order.status_id === 3 && (
+                <div className="flex flex-col gap-3 mt-3 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                  <div className="flex items-center gap-3">
+                    <FiTruck className="text-blue-600 text-xl" />
+                    <div>
+                      <span className="text-sm font-medium text-blue-800">Kargo Takip No:</span>
+                      <p className="text-lg font-bold text-blue-900 font-mono tracking-wider">
+                        {order.tracking_number || order.tracking_code}
+                      </p>
+                      <p className="text-xs text-blue-600 mt-0.5 font-semibold">
+                        {order.cargo_company || 'Kargo Firması Belirtilmedi'}
+                      </p>
+                    </div>
                   </div>
+                  <a
+                    href={
+                      order.cargo_company === 'Yurtiçi Kargo'
+                        ? `https://www.yurticikargo.com/tr/online-servisler/gonderi-sorgula?code=${order.tracking_number || order.tracking_code}`
+                        : `https://www.google.com/search?q=${encodeURIComponent(order.cargo_company || 'kargo')} takip ${order.tracking_number || order.tracking_code}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition w-full"
+                  >
+                    <span>Kargom Nerede?</span>
+                    <FiMapPin className="text-xs" />
+                  </a>
                 </div>
               )}
               {order.delivered_date && (
@@ -258,12 +356,15 @@ export default function OrderDetailPage() {
                     {item.sku && (
                       <p className="text-sm text-gray-500">SKU: {item.sku}</p>
                     )}
+                    {item.selected_size && (
+                      <p className="text-xs font-bold text-primary-600 mt-1 uppercase">Beden: {item.selected_size}</p>
+                    )}
                     <p className="text-sm text-gray-600">
-                      Adet: {item.quantity} x {item.unit_price.toLocaleString('tr-TR')} ₺
+                      Adet: {item.quantity} x {Number(item.unit_price).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
                     </p>
                     {(item.seller_first_name || item.seller_email) && (
                       <p className="text-xs text-gray-500 mt-1">
-                        Satıcı: {item.seller_first_name && item.seller_last_name 
+                        Satıcı: {item.seller_first_name && item.seller_last_name
                           ? `${item.seller_first_name} ${item.seller_last_name}`
                           : item.seller_email || 'N/A'}
                       </p>
@@ -271,7 +372,7 @@ export default function OrderDetailPage() {
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">
-                      {item.subtotal.toLocaleString('tr-TR')} ₺
+                      {Number(item.subtotal).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
                     </p>
                   </div>
                 </div>
@@ -294,11 +395,11 @@ export default function OrderDetailPage() {
                 <div>
                   <span className="text-gray-600">Müşteri:</span>
                   <p className="font-semibold text-gray-800">
-                    {order.first_name && order.last_name 
+                    {order.first_name && order.last_name
                       ? `${order.first_name} ${order.last_name}`
                       : order.guest_first_name && order.guest_last_name
-                      ? `${order.guest_first_name} ${order.guest_last_name}`
-                      : 'N/A'}
+                        ? `${order.guest_first_name} ${order.guest_last_name}`
+                        : 'N/A'}
                   </p>
                 </div>
                 <div>
@@ -334,13 +435,12 @@ export default function OrderDetailPage() {
             {/* Fiyat Özeti */}
             <div>
               <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <FiDollarSign />
                 Fiyat Özeti
               </h2>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-600">
                   <span>Ara Toplam</span>
-                  <span>{order.total_amount.toLocaleString('tr-TR')} ₺</span>
+                  <span>{Number(order.total_amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
                 </div>
                 <div className="flex justify-between text-gray-600">
                   <span>Kargo</span>
@@ -349,14 +449,14 @@ export default function OrderDetailPage() {
                 <div className="flex justify-between text-lg font-bold text-gray-800 pt-3 border-t border-gray-200">
                   <span>Toplam</span>
                   <span className="text-primary-600">
-                    {order.total_amount.toLocaleString('tr-TR')} ₺
+                    {Number(order.total_amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
                   </span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   )
 }

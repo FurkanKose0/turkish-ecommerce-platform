@@ -1,4 +1,4 @@
-// File: /Users/skorry/Desktop/untitled folder/app/api/favorites/route.ts
+// File: /Users/skorry/Desktop/projeler/eitcaret/app/api/favorites/route.ts
 import * as entry from '../../../../../app/api/favorites/route.js'
 import type { NextRequest } from 'next/server.js'
 

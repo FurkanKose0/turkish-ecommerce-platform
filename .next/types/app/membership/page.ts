@@ -1,4 +1,4 @@
-// File: /Users/skorry/Desktop/untitled folder/app/membership/page.tsx
+// File: /Users/skorry/Desktop/projeler/eitcaret/app/membership/page.tsx
 import * as entry from '../../../../app/membership/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

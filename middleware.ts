@@ -1,14 +1,22 @@
 // Middleware - Kimlik doğrulama kontrolü
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-// import { verifyToken } from '@/lib/auth'
 
 export function middleware(request: NextRequest) {
-  // Middleware'i geçici olarak devre dışı bırak
-  // Admin sayfası kendi içinde kontrol yapacak
+  const path = request.nextUrl.pathname
+
+  // Seller route protection
+  if (path.startsWith('/seller') && !path.startsWith('/seller/login')) {
+    const token = request.cookies.get('auth_token')?.value
+
+    if (!token) {
+      return NextResponse.redirect(new URL('/seller/login', request.url))
+    }
+  }
+
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/seller/:path*'],
 }

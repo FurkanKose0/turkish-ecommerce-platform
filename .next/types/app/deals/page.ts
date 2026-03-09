@@ -1,4 +1,4 @@
-// File: /Users/skorry/Desktop/untitled folder/app/deals/page.tsx
+// File: /Users/skorry/Desktop/projeler/eitcaret/app/deals/page.tsx
 import * as entry from '../../../../app/deals/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

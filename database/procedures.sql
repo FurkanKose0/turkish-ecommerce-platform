@@ -14,18 +14,19 @@ DECLARE
     v_cart_item RECORD;
     v_total_amount DECIMAL(10, 2) := 0;
     v_product_stock INTEGER;
+    v_size_stock INTEGER;
     v_order_id INTEGER;
 BEGIN
     -- Transaction başlat
     BEGIN
         -- Sepetteki ürünleri kontrol et ve toplam tutarı hesapla
         FOR v_cart_item IN 
-            SELECT c.product_id, c.quantity, p.price, p.stock_quantity, p.product_name
+            SELECT c.product_id, c.quantity, c.selected_size, p.price, p.stock_quantity, p.product_name, p.size_stocks
             FROM cart c
             INNER JOIN products p ON c.product_id = p.product_id
             WHERE c.user_id = p_user_id
         LOOP
-            -- Stok kontrolü
+            -- Genel Stok kontrolü
             IF v_cart_item.stock_quantity < v_cart_item.quantity THEN
                 p_status := 'ERROR';
                 p_message := format('Yetersiz stok: %s (Mevcut: %s, İstenen: %s)', 
@@ -33,6 +34,20 @@ BEGIN
                     v_cart_item.stock_quantity, 
                     v_cart_item.quantity);
                 RETURN;
+            END IF;
+
+            -- Beden Stoğu kontrolü (Eğer ürün bedenli ise)
+            IF v_cart_item.selected_size IS NOT NULL AND v_cart_item.size_stocks IS NOT NULL THEN
+                v_size_stock := (v_cart_item.size_stocks->>v_cart_item.selected_size)::INTEGER;
+                IF v_size_stock < v_cart_item.quantity THEN
+                    p_status := 'ERROR';
+                    p_message := format('Yetersiz beden stoğu: %s - %s (Mevcut: %s, İstenen: %s)', 
+                        v_cart_item.product_name,
+                        v_cart_item.selected_size,
+                        v_size_stock, 
+                        v_cart_item.quantity);
+                    RETURN;
+                END IF;
             END IF;
             
             -- Toplam tutarı hesapla
@@ -55,25 +70,39 @@ BEGIN
         
         -- Sipariş detaylarını oluştur ve stok düşür
         FOR v_cart_item IN 
-            SELECT c.product_id, c.quantity, p.price
+            SELECT c.product_id, c.quantity, c.selected_size, p.price, p.size_stocks
             FROM cart c
             INNER JOIN products p ON c.product_id = p.product_id
             WHERE c.user_id = p_user_id
         LOOP
             -- Sipariş detayı ekle
-            INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal)
+            INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal, selected_size)
             VALUES (
                 v_order_id,
                 v_cart_item.product_id,
                 v_cart_item.quantity,
                 v_cart_item.price,
-                v_cart_item.price * v_cart_item.quantity
+                v_cart_item.price * v_cart_item.quantity,
+                v_cart_item.selected_size
             );
             
             -- Stok düşür
-            UPDATE products
-            SET stock_quantity = stock_quantity - v_cart_item.quantity
-            WHERE product_id = v_cart_item.product_id;
+            IF v_cart_item.selected_size IS NOT NULL AND v_cart_item.size_stocks IS NOT NULL THEN
+                -- Hem genel stoku hem de beden stoklarını güncelle
+                UPDATE products
+                SET stock_quantity = stock_quantity - v_cart_item.quantity,
+                    size_stocks = jsonb_set(
+                        size_stocks, 
+                        array[v_cart_item.selected_size], 
+                        ( (size_stocks->>v_cart_item.selected_size)::INTEGER - v_cart_item.quantity )::TEXT::jsonb
+                    )
+                WHERE product_id = v_cart_item.product_id;
+            ELSE
+                -- Sadece genel stoku güncelle
+                UPDATE products
+                SET stock_quantity = stock_quantity - v_cart_item.quantity
+                WHERE product_id = v_cart_item.product_id;
+            END IF;
             
             -- Stok kontrolü (double check)
             SELECT stock_quantity INTO v_product_stock

@@ -1,4 +1,4 @@
-// File: /Users/skorry/Desktop/untitled folder/app/gift-card/page.tsx
+// File: /Users/skorry/Desktop/projeler/eitcaret/app/gift-card/page.tsx
 import * as entry from '../../../../app/gift-card/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
